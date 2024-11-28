@@ -1,0 +1,18 @@
+{
+  "title": "プライベートネットワーク内でACEME DNS01 challengeを実現する",
+  "closed": false,
+  "archived": false,
+  "created_at": "2024-11-02",
+  "comments": [
+    {
+      "author": "aa54",
+      "created_at": "2024-11-02",
+      "body_markdown": "# DNS-01 challengeで必要となるコンポーネント\n- PKI (hashicorp Vaultを使う)\n- DNS (powerDNSで建てる)\n- ACMEクライアント (Certbotを利用。今後はLegoにしようと思っている。)\n\n上のコンポーネント使って、証明書を取得することはできた。DNSにTXTレコードを登録するところは手動になってしまっているので、DNSのAPIを使って自動登録できるようにしたい。\n必須ではないがDNSSECを有効にして、セキュアに登録したい。"
+    },
+    {
+      "author": "aa54",
+      "created_at": "2024-11-02",
+      "body_markdown": "powerdnsのDNSSEC有効化方法。\n```pdns.conf\n# vi /etc/pdns/pdns.conf\n## 以下を追記。バックエンドがpostgresqlの場合。\ngpgsql-dnssec=yes\n\n# systemctl restart pdns\n# pdnsutil secure-zone <<zone名>>\n```\n\nクライアント側は特に設定は不要っぽい。\n本当にsecureになっているか確認したい。"
+    }
+  ]
+}
