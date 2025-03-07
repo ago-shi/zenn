@@ -1,0 +1,293 @@
+## 検証ケースと結果
+検証はXケース実施。結果も先に書くと下表の通り。
+
+| ケースNo. | 信頼するルート証明書 | サーバ証明書 | 証明書チェーン | 結果 |
+| --- | --- | --- | --- | --- |
+| 1 | 現行 | 現行中間から発行 | 現行サーバ--現行中間 | 接続できる |
+| 2 | 新 | 現行中間から発行 | 現行サーバ--現行中間 | 接続できない |
+| 3 | 新 | 現行中間から発行 | 現行サーバ--現行中間--新中間 | 接続できる |
+
+- 信頼するルート証明書: エンドユーザのOSにインストールされているルート証明書
+- サーバ証明書: Webサーバに設定したサーバ証明書
+- 証明書チェーン: Webサーバからエンドユーザに渡される証明書チェーン
+
+
+新しいルート証明書の主体者識別子、発行者識別子を確認しておく。
+(後で中間証明書と比較する。)
+```bash
+$ vault read -format=json pki_root/issuer/root-2025 \
+  | jq -r '.data.certificate' | openssl x509 -noout -serial -dates
+serial=61D859D4EC6AD34269B5CA04D7F1198F33033589  ## -> 証明書のシリアル
+notBefore=Feb 28 17:44:40 2025 GMT
+notAfter=Feb 18 17:45:10 2027 GMT
+
+$ vault read -format=json pki_root/issuer/root-2025 | jq -r '.data.certificate' \
+  | openssl x509 -noout -text | grep -A 3 "X509v3 Subject Key Identifier:"
+            X509v3 Subject Key Identifier:
+                B1:A0:89:2A:ED:CD:A7:26:63:C6:BD:59:76:E3:0D:1F:DB:7D:C2:5C  ## -> 主体者の識別子
+            X509v3 Authority Key Identifier:
+                B1:A0:89:2A:ED:CD:A7:26:63:C6:BD:59:76:E3:0D:1F:DB:7D:C2:5C  ## -> 発行者の識別子
+```
+
+## 新しい中間証明書のシリアル、主体者、発行者を確認
+$ cat cross-signed-intermediate.crt \
+  | openssl x509 -noout -serial -dates
+serial=7485A01781184780BD365E4CA3FB40FEF9CBCC69
+notBefore=Feb 28 18:26:20 2025 GMT
+notAfter=Oct 26 18:26:50 2025 GMT
+
+
+## クロス中間証明書の発行者に名前を付ける。
+$ vault write pki_int/issuer/bfd69160-0473-9ebb-0025-3aad4e5be9ed \
+issuer_name=xc-uws-dot-lan-intermediate
+Key                               Value
+---                               -----
+ca_chain                          [-----BEGIN CERTIFICATE-----
+MIIDtjCCAp6gAwIBAgIUdIWgF4EYR4C9Nl5Mo/tA/vnLzGkwDQYJKoZIhvcNAQEL
+BQAwEjEQMA4GA1UEAxMHdXdzLmxhbjAeFw0yNTAyMjgxODI2MjBaFw0yNTEwMjYx
+ODI2NTBaMCkxJzAlBgNVBAMTHnV3cy5sYW4gSW50ZXJtZWRpYXRlIEF1dGhvcml0
+eTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMtZMBWsYrYPxA3dGC8G
+HQlglfAC32CzTrd1eriGg4pqCv3ySD3RU6/NEmf5Yt+BFdwI97pfrb6InmQ6QOFa
+fVE8G/XRiSBZ4liMX4eMoSkS7vNYV+cPvVx5fUq3PDbJDqqTbP0zkBE+fi93b4pw
+OHGyRkMliersuH+rI6Eb5INtZOHrxhtqWcJ5dcJmtK6CDD85TSfkDm741xRdyil0
+dDKYEHmIXm9RSNQQZenpT39TIa+bsit1BcnRXP3Ug3FUNzoti+jvWgB6P5lwq7wy
+73OJI/Fm3ts+pC1+lPEFjLgFZG86+yDv8CY/7LwUFvAjmRMjZrLpnsIr89/9OsUN
+hqMCAwEAAaOB7DCB6TAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAd
+BgNVHQ4EFgQU55LeAja5jec5KexNiRKQMTS8XXQwHwYDVR0jBBgwFoAUsaCJKu3N
+pyZjxr1ZduMNH9t9wlwwRwYIKwYBBQUHAQEEOzA5MDcGCCsGAQUFBzAChitodHRw
+czovL3ZhdWx0MDEudXdzLmxhbjo4MjAwL3YxL3BraV9yb290L2NhMD0GA1UdHwQ2
+MDQwMqAwoC6GLGh0dHBzOi8vdmF1bHQwMS51d3MubGFuOjgyMDAvdjEvcGtpX3Jv
+b3QvY3JsMA0GCSqGSIb3DQEBCwUAA4IBAQB6dD5u6Jf7AKDYAiKb+IbH/fvGCtDv
+VGrOwF5qcMd12ooT18qQbV0rKk1WSjEL0KwzzEPSwxGfs3oHW3XNIU1bv5WvJMmV
+D4Y+fsbnw+dj1cWrnwXCVWe/hjKKn3SygK5ih2OEP8njWBnLiob0GxTGty7vPMd7
+/rQ6dLC2qLOi80D3grig2H3vrypCKy7uZ2gqhzxCTQ/kfPynXwpsRTM/EJc4LDYa
+Nv162nF6ouzBlEfVWP8natGHlBaCWj8FlMGc3t5j4FtWEVEqoB7t+zc0EwpQdMQo
+nFI0wRyIB6taljf60NZzsq9kLA4dcNk74DdHNq+wCOl1FCVwBjdB0TGJ
+-----END CERTIFICATE-----
+]
+certificate                       -----BEGIN CERTIFICATE-----
+MIIDtjCCAp6gAwIBAgIUdIWgF4EYR4C9Nl5Mo/tA/vnLzGkwDQYJKoZIhvcNAQEL
+BQAwEjEQMA4GA1UEAxMHdXdzLmxhbjAeFw0yNTAyMjgxODI2MjBaFw0yNTEwMjYx
+ODI2NTBaMCkxJzAlBgNVBAMTHnV3cy5sYW4gSW50ZXJtZWRpYXRlIEF1dGhvcml0
+eTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMtZMBWsYrYPxA3dGC8G
+HQlglfAC32CzTrd1eriGg4pqCv3ySD3RU6/NEmf5Yt+BFdwI97pfrb6InmQ6QOFa
+fVE8G/XRiSBZ4liMX4eMoSkS7vNYV+cPvVx5fUq3PDbJDqqTbP0zkBE+fi93b4pw
+OHGyRkMliersuH+rI6Eb5INtZOHrxhtqWcJ5dcJmtK6CDD85TSfkDm741xRdyil0
+dDKYEHmIXm9RSNQQZenpT39TIa+bsit1BcnRXP3Ug3FUNzoti+jvWgB6P5lwq7wy
+73OJI/Fm3ts+pC1+lPEFjLgFZG86+yDv8CY/7LwUFvAjmRMjZrLpnsIr89/9OsUN
+hqMCAwEAAaOB7DCB6TAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAd
+BgNVHQ4EFgQU55LeAja5jec5KexNiRKQMTS8XXQwHwYDVR0jBBgwFoAUsaCJKu3N
+pyZjxr1ZduMNH9t9wlwwRwYIKwYBBQUHAQEEOzA5MDcGCCsGAQUFBzAChitodHRw
+czovL3ZhdWx0MDEudXdzLmxhbjo4MjAwL3YxL3BraV9yb290L2NhMD0GA1UdHwQ2
+MDQwMqAwoC6GLGh0dHBzOi8vdmF1bHQwMS51d3MubGFuOjgyMDAvdjEvcGtpX3Jv
+b3QvY3JsMA0GCSqGSIb3DQEBCwUAA4IBAQB6dD5u6Jf7AKDYAiKb+IbH/fvGCtDv
+VGrOwF5qcMd12ooT18qQbV0rKk1WSjEL0KwzzEPSwxGfs3oHW3XNIU1bv5WvJMmV
+D4Y+fsbnw+dj1cWrnwXCVWe/hjKKn3SygK5ih2OEP8njWBnLiob0GxTGty7vPMd7
+/rQ6dLC2qLOi80D3grig2H3vrypCKy7uZ2gqhzxCTQ/kfPynXwpsRTM/EJc4LDYa
+Nv162nF6ouzBlEfVWP8natGHlBaCWj8FlMGc3t5j4FtWEVEqoB7t+zc0EwpQdMQo
+nFI0wRyIB6taljf60NZzsq9kLA4dcNk74DdHNq+wCOl1FCVwBjdB0TGJ
+-----END CERTIFICATE-----
+crl_distribution_points           []
+issuer_id                         bfd69160-0473-9ebb-0025-3aad4e5be9ed
+issuer_name                       xc-uws-dot-lan-intermediate
+issuing_certificates              []
+key_id                            d8f87b5b-fb76-7873-e2db-db07983c614b
+leaf_not_after_behavior           err
+manual_chain                      <nil>
+ocsp_servers                      []
+revocation_signature_algorithm    n/a
+revoked                           false
+usage                             crl-signing,issuing-certificates,ocsp-signing,read-only
+
+## 新しいルート証明書で新しい中間証明書で発行したサーバ証明書を検証する
+```
+PS Cert:\CurrentUser\Root> Get-ChildItem | Select-String uws.lan
+
+[Subject]
+  CN=uws.lan
+
+[Issuer]
+  CN=uws.lan
+
+[Serial Number]
+  61D859D4EC6AD34269B5CA04D7F1198F33033589
+
+[Not Before]
+  2025/03/01 土曜日 2:44:40
+
+[Not After]
+  2027/02/19 金曜日 2:45:10
+
+[Thumbprint]
+  5BB2E4A48ECAEEB92FCB91E9C1708D100A999795
+
+PS Cert:\CurrentUser\Root> curl.exe --ssl-no-revoke https://test-rhel9.uws.lan
+<html>
+    <body>
+        <div style="width: 100%; font-size: 40px; font-weight: bold; text-align: center;">
+            ago-shi test page.
+        </div>
+    </body>
+</html>
+## 接続出来た
+PS Cert:\CurrentUser\Root> echo $?
+True
+```
+
+
+
+## jsonファイルから作成した証明書チェーン
+$ cat cur-root-cur-int-new-int-new-test-rhel9.crt
+## サーバ証明書
+-----BEGIN CERTIFICATE-----
+MIID5zCCAs+gAwIBAgIUW8gnSOG6YBci61d4xB/DTZ1wmAEwDQYJKoZIhvcNAQEL
+~~略~~
+-----END CERTIFICATE-----
+## 中間証明書(現行)
+-----BEGIN CERTIFICATE-----
+MIIDrzCCApegAwIBAgIUdVcTOgS1/v0kSRdq/0mupGTi32owDQYJKoZIhvcNAQEL
+~~略~~
+-----END CERTIFICATE-----
+## 中間証明書(新(クロス))
+-----BEGIN CERTIFICATE-----
+MIIDtjCCAp6gAwIBAgIUdIWgF4EYR4C9Nl5Mo/tA/vnLzGkwDQYJKoZIhvcNAQEL
+~~略~~
+-----END CERTIFICATE-----
+
+```
+#### 発行したサーバ証明書を新ルート証明書で検証する
+```
+PS C:\Users\techn> cd cert:\CurrentUser\Root
+PS Cert:\CurrentUser\Root> Get-ChildItem | Select-String uws.lan
+[Subject]
+  CN=uws.lan
+
+~~略~~
+
+[Thumbprint]
+  5BB2E4A48ECAEEB92FCB91E9C1708D100A999795
+
+PS Cert:\CurrentUser\Root> Get-ChildItem 5BB2E4A48ECAEEB92FCB91E9C1708D100A999795 | Format-List
+Subject      : CN=uws.lan
+Issuer       : CN=uws.lan
+Thumbprint   : 5BB2E4A48ECAEEB92FCB91E9C1708D100A999795
+FriendlyName :
+NotBefore    : 2025/03/01 土曜日 2:44:40
+NotAfter     : 2027/02/19 金曜日 2:45:10
+Extensions   : {System.Security.Cryptography.Oid, System.Security.Cryptography.Oid, System.Security.Cryptography.Oid, S
+               ystem.Security.Cryptography.Oid...}
+
+## 接続出来た
+PS Cert:\CurrentUser> curl.exe --ssl-no-revoke https://test-rhel9.uws.lan
+<html>
+    <body>
+        <div style="width: 100%; font-size: 40px; font-weight: bold; text-align: center;">
+            ago-shi test page.
+        </div>
+    </body>
+</html>
+
+PS Cert:\CurrentUser> echo $?
+True
+```
+
+#### 発行したサーバ証明書を旧ルート証明書で検証する
+```
+PS Cert:\CurrentUser\Root> Get-ChildItem | Select-String uws.lan
+[Subject]
+  CN=uws.lan
+
+[Issuer]
+  CN=uws.lan
+
+[Serial Number]
+  44EECAD591CD00D4F53A3C0A881CBBB5EEE44FF5
+
+[Not Before]
+  2024/07/09 火曜日 0:26:48
+
+[Not After]
+  2025/07/09 水曜日 0:27:18
+
+[Thumbprint]
+  0EC62BB61D1BD4129C9AB9FCAECF641BB224AEF0
+
+PS Cert:\CurrentUser\Root> curl.exe --ssl-no-revoke https://test-rhel9.uws.lan
+<html>
+    <body>
+        <div style="width: 100%; font-size: 40px; font-weight: bold; text-align: center;">
+            ago-shi test page.
+        </div>
+    </body>
+</html>
+
+## 接続できた
+PS Cert:\CurrentUser\Root> echo $?
+True
+```
+
+#### 発行したサーバ証明書に対し証明書チェーンを旧中間証明書のみ、旧ルート証明書で検証する
+```
+PS Cert:\CurrentUser\Root> Get-ChildItem | Select-String uws.lan
+
+[Subject]
+  CN=uws.lan
+
+[Issuer]
+  CN=uws.lan
+
+[Serial Number]
+  44EECAD591CD00D4F53A3C0A881CBBB5EEE44FF5
+
+[Not Before]
+  2024/07/09 火曜日 0:26:48
+
+[Not After]
+  2025/07/09 水曜日 0:27:18
+
+[Thumbprint]
+  0EC62BB61D1BD4129C9AB9FCAECF641BB224AEF0
+
+PS Cert:\CurrentUser\Root> curl.exe --ssl-no-revoke https://test-rhel9.uws.lan
+<html>
+    <body>
+        <div style="width: 100%; font-size: 40px; font-weight: bold; text-align: center;">
+            ago-shi test page.
+        </div>
+    </body>
+</html>
+
+## 接続出来た
+PS Cert:\CurrentUser\Root> echo $?
+True
+```
+
+#### 発行したサーバ証明書に対し証明書チェーンを旧中間証明書のみ、新ルート証明書で検証する
+```
+PS Cert:\CurrentUser\Root> Get-ChildItem | Select-String uws.lan
+
+[Subject]
+  CN=uws.lan
+
+[Issuer]
+  CN=uws.lan
+
+[Serial Number]
+  61D859D4EC6AD34269B5CA04D7F1198F33033589
+
+[Not Before]
+  2025/03/01 土曜日 2:44:40
+
+[Not After]
+  2027/02/19 金曜日 2:45:10
+
+[Thumbprint]
+  5BB2E4A48ECAEEB92FCB91E9C1708D100A999795
+
+PS Cert:\CurrentUser\Root> curl.exe --ssl-no-revoke https://test-rhel9.uws.lan
+curl: (35) schannel: next InitializeSecurityContext failed: Unknown error (0x80096004) - 証明書の署名を検証できません。
+
+## 接続に失敗
+PS Cert:\CurrentUser\Root> echo $?
+False
+```
